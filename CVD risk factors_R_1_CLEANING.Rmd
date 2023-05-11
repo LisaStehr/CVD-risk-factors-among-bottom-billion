@@ -1,0 +1,2632 @@
+---
+title: "CVD risk factors among bottom billion - CLEANING"
+author: "Lisa Stehr"
+date: "7 1 2022"
+output: html_document
+---
+
+```{r load required packages}
+
+  library(tidyverse)
+  library(haven) #to load in DTA file format
+  library(foreign)
+  
+##(!)calculate CVD risk with WHO risk package
+  library(devtools)
+  #install_github("DylanRJCollins/whoishRisk")
+  library(whoishRisk)
+  
+```
+
+
+```{r Load and clean datafiles (HPACC)}
+### the final dataset is based on three original datasets: The first is from the Global Health and Population Project on Access to Care for Cardiometabolic Diseases (HPACC), for which more information can be found here: https://www.hpaccproject.org/. The HPACC dataset mostly contains STEPS surveys. The second dataset contains Demographic and Health surveys, for which more information is here: https://dhsprogram.com/. The third datasets consists of Global Adult Tobacco Survey (GATS), available under https://www.who.int/teams/noncommunicable-diseases/surveillance/systems-tools/global-adult-tobacco-survey. The cleaning and recoding of these orginal three datasets was done elsewhere, this script works with those previously cleaned versions. 
+
+
+#the HPACC dataset itself has different versions and several updates
+  HPACC_2019data_CLEAN_2020_09_23 <- read_dta("~/HPACC_2019data_CLEAN_2020-09-23.dta")
+  HPACC_2020data_CLEAN_2020_08_04 <- read_dta("~/HPACC_2020data_CLEAN_2020-08-04.dta") #add update Jan. 2021
+  HPACC_older2019waves_CLEAN_2020_08_16 <- read_dta("~/HPACC_older2019waves_CLEAN__2020-08-16.dta")
+  hpacc.new <- read_dta("C:/Users/Lisa/Downloads/HPACC_2020data_CLEAN_2021-02-07.DTA")
+  statin.countries <- read_dta("C:/Users/Lisa/Downloads/pooled_new_surveys - 2021.06.29.dta")
+
+#limit to countries for which more recent datasets are available  
+  countries2020.01 <- c( "Algeria", "Benin", "Botswana", "Iran",  "Kiribati", "Kyrgyzstan", "Laos", "Lesotho", "Moldova", "Morocco", "Myanmar", "Niger", "Rwanda", "Samoa", "Sao Tome and Principe", "Solomon Islands", "Tajikistan", "Tonga", "Tuvalu", "Zambia")
+  countries2020.02 <- c( "Kyrgyz Republic", "Lesotho")
+  countries2021.02 <- c("Cabo Verde", "Ecuador", "Gambia", "Malawi")
+  countries2021.09 <- c("Ethiopia", "Jordan", "Mongolia 2019")
+  
+  update2021.01 <- HPACC_2020data_CLEAN_2020_08_04 %>% 
+    filter(country %in% countries2020.01)
+  update2021.02 <- HPACC_older2019waves_CLEAN_2020_08_16 %>%
+    filter(Country %in% countries2020.02)
+  hpacc.new <- hpacc.new %>% 
+    filter(Country %in% countries2021.02)
+  statin.countries <- statin.countries %>% 
+    filter(country %in% countries2021.09)
+
+#bring into same format for merging
+  hpacc.new   <- hpacc.new %>% mutate(
+    ex_work = as.character(ex_work))
+  statin.countries   <- statin.countries %>% rename(
+    Country = country)
+ 
+#combine all HPACC files       
+  HPACC_comb <- bind_rows(HPACC_2019data_CLEAN_2020_09_23, update2021.01, update2021.02, hpacc.new, statin.countries)
+
+#select only necessary variables and rename/reformat those if necessary
+  HPACC1 <- dplyr::select(HPACC_comb,
+                        
+              #survey
+              svy,
+                                      
+              #unique ids
+              p_id, c_id, d_id, hh_id,
+              
+              # hh wealth index 
+              asset_index, income_std, income_yr, income_mth, income_wk, income_cat, wealth_quintile,
+              
+              #education (categorical)
+              educat,
+              
+              #education (single years)
+              edyears,
+              
+              #age
+              age,
+              
+              #sex
+              sex,
+              
+              #Country
+              Country, 
+              
+              #urban
+              rural,
+              
+              #PSU
+              psu,
+              
+              #survey year
+              year,
+              
+              #sampling weight
+              hh_wt, p_wt, wstep1, wstep2, wstep3,  
+              
+              #sampling weight for Indonesia and Mexico, Ethiopia, Jordan, Mongolia 2019
+              w_all, w_bp, w_fbg,
+              
+              #stratum identifier
+              stratum,                    
+              
+              #pgregnant
+              pregnant,
+              
+              #eligbility/consent
+              bp_ms,
+              
+              #bp systolic
+              sbp1, sbp2, sbp3,
+              
+              #bp diastolic
+              dbp1, dbp2, dbp3,
+              
+              #bmi
+              bmi,
+              
+              #diabetes
+              clin_dia, bgms_hbg_med_ctl, bgms_hbg_med,
+              
+              #hypertension
+              clin_hypt, bpms_hypt_med, bpms_hypt_med_ctl,fast_new, 
+              
+              #overweight
+              overweight, 
+              
+              #obesity
+              obese,
+              
+              #smoking
+              csmoke, 
+              
+              #lipids
+              high_ldl, high_chol, wpop_tchol, weq_tchol, wpop_ldl, weq_ldl,
+
+              #was told lipids
+              hchol,
+          
+              #ever measured lipids
+              chol_ms,
+          
+              #meds
+              chol_med,
+              
+              #sampling weight for lipids
+              w3,
+              
+              #total cholesterol
+              tchol_mgdl, ldl_mgdl, ldl_mmoll,
+              
+              #cholesterin, statin use, and heart attack, angina, stroke
+              tchol_mmoll, statin, mi
+          
+              )
+
+###format
+  HPACC1 <- HPACC1 %>% 
+    unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>%  
+    mutate(country = Country,
+           year = as.character(year),
+           psu = as.character(psu),
+           psu = ifelse(psu=='.', NA, psu), #create primary sampling unit variable where it is missing
+           psu_orig = psu)
+  
+    onlyonepsu <- c("Uganda", "Romania", "Niger")  #Set psu_num in those countries with only one PSU equal to id
+  
+  HPACC1 <- HPACC1 %>% 
+    mutate(psu = ifelse(country %in% onlyonepsu, id, psu),
+           urban = ifelse(rural==1, 0,
+                         ifelse(rural==0, 1, NA)),
+           psu = str_c(country, psu, sep = "_"), 
+           stratum = as.character(stratum),
+           sampling_weight = ifelse(is.na(p_wt)==T, hh_wt, p_wt),
+           hh_id = ifelse(is.na(hh_id)==T, p_id, hh_id),
+           pregnant = ifelse(pregnant==0, 0,
+                            ifelse(pregnant==1, 1, NA)),
+           pregnant = ifelse(sex==0, 999999999, pregnant),
+           age = as.integer(age),
+           wealth_index = asset_index,
+           overweight = ifelse(overweight==1, 1,
+                              ifelse(overweight==0, 0, NA)),
+           obese = ifelse(obese==1, 1,
+                         ifelse(obese==0, 0, NA)),
+           
+           #systolic blood pressure
+           sbp1 = ifelse(sbp1>240 | sbp1<70, NA, sbp1), 
+           sbp2 = ifelse(sbp2>240 | sbp2<70, NA, sbp2),
+           sbp3 = ifelse(sbp3>240 | sbp3<70, NA, sbp3),
+           sbp_ave = rowMeans(data.frame(sbp2,sbp3), na.rm = T), 
+           
+           #diastolic blood pressure
+           dbp1 = ifelse(dbp1>130 | dbp1<40, NA, dbp1), 
+           dbp2 = ifelse(dbp2>130 | dbp2<40, NA, dbp2),
+           dbp3 = ifelse(dbp3>130 | dbp3<40, NA, dbp3),
+           bmi = ifelse(bmi<10 | bmi>80, NA, bmi),
+           
+           #hypertension
+           all_hypt = ifelse(clin_hypt==1, 1,         
+                       ifelse(clin_hypt==0, 0, NA)),
+           
+           #received treatment for hypertension
+           hypt_treat = ifelse(bpms_hypt_med==1, 1, 
+                              ifelse(bpms_hypt_med==0, 0, NA)),
+           
+           #blood pressure is controlled
+           hypt_ctrl = ifelse(bpms_hypt_med_ctl==1, 1, 
+                             ifelse(bpms_hypt_med_ctl==0, 0, NA)),
+           
+           #diabetes
+           all_dia = ifelse(clin_dia==1, 1,
+                       ifelse(clin_dia==0, 0, NA)),
+           
+           #received treatment for diabetes
+           dia_treat = ifelse(bgms_hbg_med==1, 1,
+                             ifelse(bgms_hbg_med==0, 0, NA)),
+           
+           #blood sugar is controlled
+           dia_ctrl = ifelse(bgms_hbg_med_ctl==1, 1, 
+                            ifelse(bgms_hbg_med_ctl==0, 0, NA)),
+           
+           #received treatment for dyslipidemia
+           lipid_treat = ifelse(chol_ms==1 & hchol==1 & chol_med==1, 1,
+                             ifelse(is.na(chol_ms), NA, 0)),
+           
+           #dyslipidemia: has high LDL and/or is on treatment
+           high_chol = ifelse(is.na(high_chol)==T & tchol_mmoll > 6.21, 1,
+                             ifelse(is.na(high_chol)==T & tchol_mmoll < 6.21, 0,high_chol)),
+           high_ldl = ifelse(is.na(high_ldl)==T & ldl_mmoll > 4.1, 1,
+                             ifelse(is.na(high_ldl)==T & ldl_mmoll < 4.1, 0,ldl_mmoll)),
+           dyslipid = ifelse((high_chol==1 | high_ldl==1) | (high_chol==1 & is.na(high_ldl)==T) | (is.na(high_chol)==T & high_ldl==1) | lipid_treat==1, 
+                             1, NA),
+           dyslipid = ifelse(high_chol==0 & high_ldl==0 & (lipid_treat==0 | is.na(lipid_treat)==T) | high_chol==0 & is.na(high_ldl)==T & (lipid_treat==0                               |  is.na(lipid_treat)==T) | is.na(high_chol)==T & high_ldl==0 & (lipid_treat==0 | is.na(lipid_treat)==T), 0, dyslipid))
+  
+#limit to variables required for analysis
+  HPACC1 <- select(HPACC1, svy, year, id, sex, pregnant, age, educat, edyears, country, psu, stratum, urban, sampling_weight, wealth_index, csmoke, 
+                   fast_new, all_dia, dia_treat, dia_ctrl, all_hypt, hypt_treat, hypt_ctrl, sbp_ave, bmi, overweight, obese,  dbp1, dbp2, dbp3, sbp1, 
+                   sbp2, sbp3, asset_index, psu_orig, p_id, hh_id, c_id, d_id, income_cat, income_std, income_wk, income_yr, income_mth,  wstep1, wstep2,
+                   wstep3,  wpop_tchol, weq_tchol, wpop_ldl, weq_ldl, w_all, w_bp, w_fbg,  w3,  dyslipid, mi, statin, tchol_mmoll, tchol_mgdl,
+                   wealth_quintile)
+
+#rename for later merging with population data
+  HPACC1$country[HPACC1$country == "Kyrgyz Republic"] <- "Kyrgyzstan"
+
+#remove countries for which we have duplicates in DHS file 
+      HPACC1 <- HPACC1 %>% filter(svy!= 'SANHANES')
+      HPACC1 <- HPACC1[!(HPACC1$country == "Lesotho" & HPACC1$svy =='DHS' ),] 
+      HPACC1 <- HPACC1[!(HPACC1$country == "Kyrgyzstan" & HPACC1$svy =='DHS' ),] #only keep STEPS 2013
+      HPACC1 <- HPACC1[!(HPACC1$country == "Namibia" & HPACC1$svy =='DHS' ),] #has greater sample in DHS file
+      HPACC1 <- HPACC1[!(HPACC1$country == "Peru" & HPACC1$svy =='DHS' ),] #has greater sample in DHS file
+      HPACC1 <- HPACC1[!(HPACC1$country == "South Africa DHS" & HPACC1$svy =='DHS' ),] #has greater sample in DHS file
+      HPACC1 <- HPACC1[!(HPACC1$country == "Burkina Faso" & HPACC1$svy == 'STEPS' ),]  #has no income data for STEPS
+      HPACC1 <- HPACC1[!(HPACC1$country == "Costa Rica" & HPACC1$svy == 'STEPS' ),] #has no income data for STEPS
+      HPACC1<-HPACC1[!(HPACC1$country=='Bangladesh' & HPACC1$year=='2011'),] #more recent DHS available
+      HPACC1<-HPACC1[!(HPACC1$country=='Ecuador' & HPACC1$year=='2012'),] #more recent STEPS available
+
+#ensure identical format for country names           
+   HPACC1 <- HPACC1 %>% 
+    mutate(country = ifelse(country=='Mongolia 2019', 'Mongolia', country))
+      
+#restrict to age 15+ and non-pregnant          
+  HPACC1 <- HPACC1 %>% filter(age > 14)
+  HPACC1 <- filter(HPACC1, is.na(pregnant) | pregnant!=1)
+    
+```
+
+
+```{r HPACC: add cholesterol for Uganda and Kenya}
+
+#cholesterol variable is missing for Uganda and Kenya and thus needs to be added separately 
+      uganda2014 <- read.csv("*/uga2014.csv", header=T, stringsAsFactors = F)
+      uganda2014 <- uganda2014 %>% 
+        select(pid, b8) %>% 
+        rename(p_id = pid,
+               tchol_mmoll = b8)%>% #variable needs same name in all datasets for merging
+        mutate(p_id = as.character(p_id),
+               tchol_mmoll = as.character(tchol_mmoll))
+
+#create separate file with only Uganda to add cholesterol variable
+      hpacc.uganda <- filter(HPACC1, Country=='Uganda')
+      hpacc.uganda <- hpacc.uganda %>% 
+        mutate(p_id = as.character(p_id),
+               tchol_mmoll = as.character(tchol_mmoll)) %>% 
+        select(-tchol_mmoll)
+
+#merge both files and bring variables into same format to prepare merging with main dataset   
+      uganda <- hpacc.uganda %>% left_join(uganda2014, by='p_id')
+      HPACC1 <- HPACC1 %>% 
+        mutate(p_id = as.character(p_id),
+               tchol_mmoll = as.character(tchol_mmoll))
+
+#remove Uganda from main dataset and replace it with the newly created file that contains cholesterol            
+      HPACC1 <- HPACC1[!(HPACC1$Country == "Uganda" & HPACC1$svy =='STEPS' ),]       
+      HPACC1 <- bind_rows(HPACC1, uganda)
+      
+
+###apply the same procedure for Kenya
+      kenya2015 <- read.csv("~/ken2015.csv", header=T, stringsAsFactors = F)
+      kenya2015 <- kenya2015 %>% 
+        select(pid, b8)%>% 
+        rename(p_id = pid,
+               tchol_mmoll = b8)%>% 
+        mutate(p_id = as.character(p_id),
+               tchol_mmoll = as.character(tchol_mmoll))
+
+#create separate file with only Kenya to add cholesterol variable            
+      hpacc.kenya <- filter(HPACC1, Country=='Kenya')
+      hpacc.kenya <- hpacc.kenya %>% 
+        mutate(p_id = as.character(p_id),
+               tchol_mmoll = as.character(tchol_mmoll)) %>% 
+        select(-tchol_mmoll)
+
+#merge both files and bring variables into same format to prepare merging with main dataset       
+      kenya <- hpacc.kenya %>% left_join(kenya2015, by='p_id')
+      HPACC1 <- HPACC1 %>% 
+        mutate(p_id = as.character(p_id),
+               tchol_mmoll = as.character(tchol_mmoll))
+ 
+#remove Kenya from main dataset and replace it with the newly created file that contains cholesterol            
+      HPACC1 <- HPACC1[!(HPACC1$Country == "Kenya" & HPACC1$svy =='STEPS' ),]       
+      HPACC1 <- bind_rows(HPACC1, kenya)
+      
+#save final HPACC dataset  
+  write.csv(HPACC1, "~/HPACC1.csv")
+  
+```
+
+
+```{r Load and clean datafiles (DHS)}
+#load in and select required variables
+  DHS <- read_dta("~/compiled_data_PR_PL.DTA") 
+  DHS <- dplyr::select(DHS,
+
+                #unique ids
+                hhid, hvidx, hv001, hv002, hv003,
+                
+                # hh wealth index (continous)
+                hv271,
+                
+                #education (categorical)
+                hv109,
+                
+                #education (single years)
+                hv108,
+                
+                # age
+                hv105,
+                
+                # sex
+                hv104,
+                
+                #country
+                country,
+                
+                #PSU
+                hv021,
+                
+                #survey year (cmc)
+                hv008,
+                
+                #sampling weight
+                hv005, 
+                
+                #stratum identifier
+                hv023, 
+                
+                #urban/rural
+                hv025,
+                
+                # resident/visitor (ususal resident)
+                hv102,
+                
+                #pregnant
+                ha54,
+                
+                #eligbility
+                hv118, #eligibility for male interview
+                
+                #bmi
+                ha40
+                )
+
+
+####bring into correct format
+  DHS <- DHS %>% 
+    unite(id, c('hhid', 'hvidx'), sep = "_", remove = FALSE)%>% 
+    mutate(svy="DHS",
+           mergeid=str_c(as.character(hv001), as.character(hv002), as.character(hvidx), sep=" "),
+           wealth_index=hv271,
+           edyears=hv108,
+           educat=ifelse(hv109==0, 0,
+                      ifelse(hv109==1, 1,
+                             ifelse(hv109==2, 2,
+                                    ifelse(hv109==3, 3,
+                                           ifelse(hv109==4, 4,
+                                                  ifelse(hv109==5, 4, #combine this education level to avoid small categories
+                                                         ifelse(hv109==8, 777777777, NA))))))),
+          country = as.character(country),
+          stratum = as.character(hv023),
+          stratum = ifelse(is.na(stratum)==TRUE, hv025, stratum),
+          age = ifelse(is.na(hv105)==TRUE, NA, hv105),
+          hh_id = ifelse(is.na(hhid)==T, mergeid, hhid),
+          sex = ifelse(hv104==2, 1,
+                              ifelse(hv104==1, 0, NA)),
+          psu = as.character(hv021),
+          psu = str_c(country, psu, sep = "_"),  
+          psu_orig = hv021,
+          year = as.character(hv008),
+          year = 1900 + as.integer(hv008 - 1)/12,
+          year = as.integer(year),
+          year = as.character(year),
+          hh_wt = hv005,
+          p_wt = hv005/1000000,
+          sampling_weight = ifelse(is.na(p_wt)==T, hh_wt, p_wt),
+          urban = ifelse(hv025==1, 1, 
+                     ifelse(hv025==2, 0, NA)),
+          visitor = ifelse(hv102==0, 1, 0),   
+          pregnant = ifelse(ha54==1, 1,
+                          ifelse(ha54==0, 0, NA)),
+          pregnant = ifelse(sex==0, 999999999, pregnant),
+          bmi =ha40/100,
+          overweight = ifelse(bmi>=25, 1,
+                     ifelse(bmi<25, 0, NA)),
+          obese = ifelse(bmi>=30, 1,
+                     ifelse(bmi<30, 0, NA)),
+          edyears = ifelse(edyears>=98, NA, edyears),
+          bmi = ifelse(bmi<10 | bmi>80, NA, bmi))
+
+  DHS1 <- DHS %>% 
+    select(id, svy, year, country, sex, pregnant, age, psu, hh_wt, p_wt, sampling_weight, wealth_index, stratum, educat, edyears, stratum,  urban, 
+           visitor,bmi, obese, overweight, mergeid, psu_orig, hh_id, hvidx, hhid)
+
+#rename country 
+  DHS1$country[DHS1$country == "Cote d'Ivoire"] <- "Cote dIvoire"
+```
+
+
+```{r create a combined DHS dataset that only includes most recent surveys and add smoking data where missing}
+
+#remove countries for which we have more recent surveys available
+  DHS1 <- filter(DHS1, country!='Bangladesh')
+  DHS1<-DHS1[!(DHS1$country=='Burkina Faso' & DHS1$year=='2014'),] #this is a MIS
+  DHS1<-DHS1[!(DHS1$country=='Cameroon' & DHS1$year=='2011'),] #more recent survey available
+  DHS1<-DHS1[!(DHS1$country=='Nigeria' & DHS1$svy=='DHS'),] #more recent DHS survey available
+  DHS1<-DHS1[!(DHS1$country=='Uganda' & DHS1$svy=='DHS'),] #more recent DHS survey available
+  DHS1<-DHS1[!(DHS1$country=='Zambia' & DHS1$year=='2014'),] #more recent survey available
+  DHS1<-DHS1[!(DHS1$country=='Benin' & DHS1$svy=='DHS'),] #more recent survey available
+  DHS1<-DHS1[!(DHS1$country=='Zambia' & DHS1$svy=='DHS'),] #more recent STEPS survey available
+  DHS1<-DHS1[!(DHS1$country=='Sierra Leone' & DHS1$svy=='DHS'),] #this is a MIS
+  DHS1<-DHS1[!(DHS1$country=='Nigeria' & DHS1$year=='2015'),] #this is a MIS
+  DHS1<-DHS1[!(DHS1$country=='Mali' & DHS1$year=='2015'),] #this is a MIS
+  DHS1<-DHS1[!(DHS1$country=='Liberia' & DHS1$year=='2016'),]  #this is a MIS
+  DHS1<-DHS1[!(DHS1$country=='Colombia' & DHS1$svy=='DHS'),] #does not include outcomes
+  DHS1<-DHS1[!(DHS1$country=='Philippines' & DHS1$svy=='DHS'),] #does not include outcomes
+  DHS1<-DHS1[!(DHS1$country=='Indonesia' & DHS1$year=='2012'),] #more recent survey available
+  DHS1<-DHS1[!(DHS1$country=='Guinea' & DHS1$year=='2012'),] #more recent DHS available
+
+#merge duplicate DHS dataframes and add countries with more recent surveys available in new.files.script
+#source('~/new.files.script_2021_09_06.R')
+  new.files <- read.csv("D:/new.files.csv", stringsAsFactors=F)
+  new.files <- new.files[,-1] 
+  new.files <- new.files %>% 
+    mutate(stratum = as.character(stratum))
+#this file includes Lesotho 2014, Kyrgistan 2012, Uganda 2016, Nigeria, Madagascar 2008-2009, Guinea 2018, Cameroon 2018, Burkina FAso 2010, Bolivia 2008, Bangladesh 2017-2018, India, South Africa, Peru 2012, Namibia and Zambia 2018, Nigeria 2018, Turkey
+
+#now remove those countries from DHS file 
+  DHS1 <- filter(DHS1, country!='Lesotho')
+  DHS1 <- filter(DHS1, country!='Kyrgyz Republic')
+  DHS1 <- filter(DHS1, country!='Namibia')
+  DHS1 <- filter(DHS1, country!='Peru')
+  DHS1 <- filter(DHS1, country!='South Africa')
+  DHS1 <- filter(DHS1, country!='India')
+
+#combine into one file where only most recent surveys are included       
+  DHS1 <- bind_rows(DHS1, new.files)
+  DHS1 <- DHS1 %>% 
+    mutate(year = as.character(year))%>% 
+    select(-hvidx, -hhid, -ineligible) 
+
+###ADD SMOKING DATA    
+  DHS_csmoke <- read.csv("~/DHS_csmoke.csv", header=T, stringsAsFactors = F)
+  DHS_csmoke  <- DHS_csmoke [,-1]
+  
+#clean smoking data
+  DHS_csmoke  <- DHS_csmoke %>% 
+    mutate(csmoke = ifelse(csmoke==888888888 | csmoke==99 | csmoke==98 | csmoke==90, 0, 
+                    ifelse(csmoke>1 & csmoke<81, 1, csmoke)))%>% 
+    mutate(year = as.character(year))
+
+#merge and fill in smoking data if missing in original file    
+  DHS1 <- DHS1 %>% 
+    full_join(DHS_csmoke, by=c("mergeid", "country", "year"), all = TRUE) %>% 
+    mutate(csmoke = ifelse(is.na(csmoke.x), csmoke.y, csmoke.x)) %>% 
+    select(-csmoke.x, -csmoke.y) %>% 
+    mutate(year = ifelse(DHS1$country == "Nepal", 2016, year),
+           csmoke = ifelse(country == "Ethiopia", NA, csmoke))
+ 
+#double-check: file should be limited to non-pregnant, adults, permanent residents
+    DHS1 <- filter(DHS1, is.na(pregnant) | pregnant!=1 | is.na(visitor) | visitor!=0)
+    DHS1 <- filter(DHS1, visitor!=1)
+    DHS1 <- filter(DHS1, age >14)
+    
+#save final DHS dataset
+  write.csv(DHS1, "~/DHS1.csv")
+
+```
+
+
+```{r Load and clean datafiles (GATS)}
+
+ #we first need to extract the place of residence variable, because it is not included in cleaned dataset. Raw files can be downloaded here: https://www.who.int/teams/noncommunicable-diseases/surveillance/data
+
+#China
+    GATS_China <- read_dta("China_Public_Use_02Mar2011.DTA")
+    GATS_China <- select(GATS_China, caseid, residence)
+    GATS_China <- GATS_China %>% 
+      mutate(country = "China",
+             hhid = as.character(caseid)) %>% 
+      select(-caseid)
+    
+#Costa Rica
+    GATS_Costa_Rica <- read_dta("COSTA RICA_PUBLIC_USE_11JULY2018.DTA")
+    GATS_Costa_Rica <- select(GATS_Costa_Rica, CASEID, residence)
+    GATS_Costa_Rica <- GATS_Costa_Rica %>% 
+      mutate(country = "Costa Rica") %>%
+      mutate(hhid = as.character(CASEID)) %>% 
+      select(-CASEID)
+     
+ #Ethiopia
+    GATS_Ethiopia <- read_dta("ETH_GATS_Public_Use_24Oct2018.DTA")
+    GATS_Ethiopia <- select(GATS_Ethiopia, CASEID, Residence)
+    GATS_Ethiopia <- GATS_Ethiopia %>% 
+      mutate(country = "Ethiopia") %>% 
+      mutate(hhid = as.character(CASEID),
+             residence = Residence) %>% 
+      select(-CASEID, -Residence)
+    
+#India
+    GATS_India <- read_dta("IN_GATS_Public_Use_27Sep2017.DTA") #online nur 2009 und 2016, in M. set aber 2017
+    GATS_India <- select(GATS_India, CASEID, Residence)
+    GATS_India <- GATS_India %>% 
+      mutate(country = "India") %>% 
+      mutate(hhid = as.character(CASEID),
+             residence = Residence) %>% 
+      select(-CASEID, -Residence)
+    
+#Kazakhstan
+    GATS_Kazakhstan <- read_dta("KAZAKHSTAN_PUBLIC_USE_27Sep2016.DTA")
+    GATS_Kazakhstan <- select(GATS_Kazakhstan, CASEID, residence)
+    GATS_Kazakhstan <- GATS_Kazakhstan %>% 
+       mutate(country = "Kazakhstan") %>% 
+       mutate(hhid = as.character(CASEID)) %>% 
+       select(-CASEID)
+     
+#Malaysia
+    GATS_Malaysia <- read_dta("MY_public_25march2013.DTA")
+    GATS_Malaysia <- select(GATS_Malaysia, CaseID, RESIDENCE)
+    GATS_Malaysia <- GATS_Malaysia %>% 
+       mutate(country = "Malaysia")%>% 
+       mutate(hhid = as.character(CaseID),
+              residence = RESIDENCE) %>% 
+       select(-CaseID, -RESIDENCE)
+    
+#Mexico
+    GATS_Mexico <- read.spss("Me_GATS_2015_Pub_Use_9MAR2018.sav", use.value.label=TRUE, to.data.frame=TRUE)
+    GATS_Mexico <- select(GATS_Mexico, caseid, residence)
+    GATS_Mexico <- GATS_Mexico %>% 
+      mutate(country = "Mexico",
+             hhid = as.character(caseid)) %>% 
+      select(-caseid)
+    
+#Panama
+    GATS_Panama <- read_dta("PA_PUBLIC_USE_21DEC2015.DTA")
+    GATS_Panama <- select(GATS_Panama, caseid, residence)
+    GATS_Panama <- GATS_Panama %>% 
+      mutate(country = "Panama",
+             hhid = as.character(caseid)) %>% 
+      select(-caseid)
+    
+#Philippines
+    GATS_Philippines <- read_dta("PHL2_Public_Use_7May2018.DTA")
+    GATS_Philippines<- select(GATS_Philippines, CASEID, residence) %>% 
+      mutate(country = "Philippines")%>% 
+      mutate(hhid = as.character(CASEID)) %>% 
+      select(-CASEID)
+    
+#Senegal
+    GATS_Senegal <- read_dta("SN_GATS_2015_Pub_Use_31May2017.DTA")
+    GATS_Senegal <- select(GATS_Senegal, CASEID, residence)l %>% 
+      mutate(country = "Senegal") %>% 
+      mutate(hhid = as.character(CASEID)) %>% 
+      select(-CASEID)
+    
+#Uruguay
+    GATS_Uruguay <- read_dta("Uruguay_Public_Use_07Feb2011.DTA")
+    GATS_Uruguay <- select(GATS_Uruguay, caseid, residence)%>% 
+      mutate(country = "Uruguay",
+             hhid = as.character(caseid)) %>% 
+      select(-caseid)
+    
+#Vietnam
+    GATS_Vietnam <- read_dta("VN_GATS_Public_Use_22JUL2016.DTA")
+    GATS_Vietnam <- select(GATS_Vietnam, CASEID, RESIDENCE) %>% 
+      mutate(country = "Vietnam")%>% 
+      mutate(hhid = as.character(CASEID),
+             residence = RESIDENCE) %>% 
+      select(-CASEID, -RESIDENCE)
+    
+#merge those files   
+  GATS_additional <- bind_rows(GATS_China, GATS_Costa_Rica, GATS_Ethiopia, GATS_India, GATS_Kazakhstan, GATS_Malaysia, GATS_Vietnam, GATS_Uruguay, 
+                               GATS_Senegal, GATS_Philippines, GATS_Panama, GATS_Mexico) 
+
+#load in main GATS file merge so that it includes the rural/urban variable
+  GATS <- read_dta("GATSforBottomBillion.DTA")
+  GATS<-GATS[!(GATS$country=='Bangladesh' & GATS$year=='2009'),] #replace with more recent survey
+  GATS <- left_join(GATS, GATS_additional, by=c("hhid", "country"))
+
+#add most recent Bangladesh and Botswana survey (they were not yet included in GATSforBottomBillion file)
+  bangladesh.gats <- read_dta("~/GATS_BD_2017_BottomBillion.dta")
+  bangladesh.gats <- bangladesh.gats %>% 
+    mutate(hhid = as.character(CASEID),
+           psu = as.character(psu),
+           stratum = as.character(stratum),
+           p_id = as.character(p_id)) %>% 
+    select(-CASEID)
+
+  botswana.gats <- read_dta("C:/Users/Lisa/Downloads/BotswanaGATS(1).dta")
+  botswana.gats <- botswana.gats %>% 
+    mutate(hhid = as.character(hhid),
+           psu = as.character(psu),
+           stratum = as.character(stratum),
+           p_id = as.character(p_id)) 
+
+#add Botswana and Bangladesh to main file and limit to variables needed for analysis
+  GATS1 <- bind_rows(GATS, bangladesh.gats, botswana.gats)
+  GATS1 <- select(GATS1, 
+
+            #survey
+            svy,
+                           
+            #unique id
+            hhid,
+            
+            #extreme poverty and wealth index
+            ai, wealth,
+            
+            #education (categorical)
+            educat, 
+            
+            # age
+            age, 
+            
+            # sex
+            sex,
+            
+            #country
+            country,
+            
+            #PSU
+            psu,
+            
+            #survey year
+            year,
+            
+            #sampling weight
+            w1, 
+            
+            #stratum identifier
+            stratum,       
+            
+            #urban/rural
+            residence,
+            
+            #smoking
+            csmk)
+
+  GATS1 <- GATS1 %>% mutate(
+    mergeid = hhid,
+    year = as.character(year),
+    psu_orig = psu,
+    psu = as.character(psu),
+    mergeid = hhid,
+    psu = str_c(country, psu, sep = "_"), 
+    csmoke = csmk,
+    wealth_index = ai,
+    wealth_quintile = wealth,
+    sampling_weight = w1,
+    urban = ifelse(residence==1, 1, 
+                   ifelse(residence==2, 0, NA)))
+
+
+  GATS1 <- select(GATS1, mergeid, svy, wealth_quintile, year, psu, sampling_weight, stratum, sex, age, country, urban, educat, wealth_index, csmoke, 
+                  urban, psu_orig)
+
+#remove GATS files that we no longer need, because there are more recent surveys in DHS or HPACC dataset 
+  GATS1<-GATS1[!(GATS1$country=='Egypt' & GATS1$year=='2009'),] #more recent survey available
+  GATS1<-GATS1[!(GATS1$country=='Pakistan' & GATS1$year=='2014'),] #more recent survey available
+  GATS1<-GATS1[!(GATS1$country=='Cameroon' & GATS1$year=='2013'),] #more recent STEPS survey available
+
+#save final combined dataset
+  write.csv(GATS1, "D:/GATS1.csv")
+
+```
+
+#add poverty data  (adults specific poverty headcount ratio), available here: https://pip.worldbank.org/home
+#the idea is to first arrange people in dataset by their wealth. Then use the poverty headcount ratio to determine how many people fall below this ratio #cutoff19 = as.integer(ppl in sample * povertyline) - this gives the last person below the poverty line  - 
+#and then label those below the ratio as 1, all others as 0 
+
+```{r Add poverty data: DHS}
+
+#all files are quite large so it's better to load them in one by one
+
+#load in DHS file
+  DHS1 <- read.csv("~/DHS1.csv", header=T, stringsAsFactors = F)
+  DHS1  <- DHS1 [,-1]
+
+#Convert years, so that only the more recent year remains if 2 years given, this helps with merging done below
+  DHS1$year[DHS1$year == "2008-2009"] <- "2009" #Madagascar
+  DHS1$year[DHS1$year =="2017-2018"] <- "2018" #Bangladesh
+  
+#load in poverty data and merge with DHS file
+  country_codes <- read_dta("~/country_codes(1).dta")
+  DHS1 <- merge(DHS1,country_codes,by=c("country")) 
+
+#load in Poverty Ratios, for which we imputed values due to missing poverty data
+  poverty_ratios <- read.csv("~/imputed_pov_ratios_kalman_reshaped.csv", header=T, stringsAsFactors = F)
+
+  pov <- list()
+  cutoff19 <- list()
+  cutoff32 <- list()
+  cutoff55 <- list()
+
+  ccodes = DHS1 %>% count(CountryCode, sort = TRUE)
+  country_codes = c(ccodes$CountryCode)
+
+  for (country_code in country_codes) {
+   pov[[country_code]] <- filter(DHS1, CountryCode==country_code)
+   pov[[country_code]] <- pov[[country_code]] [order(pov[[country_code]] $'wealth_index'), ] #order by wealth
+   pov[[country_code]] <- pov[[country_code]] %>% dplyr::mutate(hh_members = row_number()) #assign a row number so that we can determine the people at the cut-off
+   dta_set <- pov[[country_code]][is.na(pov[[country_code]]["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year"))
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   
+   cutoff19[[country_code]] = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32[[country_code]] = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55[[country_code]] = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+
+   pov[[country_code]] <- pov[[country_code]] %>%
+     mutate(poor19 = ifelse(hh_members < cutoff19[[country_code]], 1, 0))
+    
+   pov[[country_code]] <- pov[[country_code]] %>%
+     mutate(poor19 = ifelse(is.na(wealth_index)==T, NA, poor19))
+      
+   pov[[country_code]] <- pov[[country_code]] %>%
+     mutate(poor32 = ifelse(hh_members < cutoff32[[country_code]], 1, 0))
+    
+   pov[[country_code]] <- pov[[country_code]] %>%
+     mutate(poor32 = ifelse(is.na(wealth_index)==T, NA, poor32))
+      
+   pov[[country_code]] <- pov[[country_code]] %>%
+     mutate(poor55 = ifelse(hh_members < cutoff55[[country_code]], 1, 0))
+    
+   pov[[country_code]] <- pov[[country_code]] %>%
+     mutate(poor55 = ifelse(is.na(wealth_index)==T, NA, poor55))
+  
+  }
+
+#append DHS poverty data 
+  pov.dhs <- bind_rows(pov) 
+  pov.dhs <- filter(pov.dhs, country!='Jordan') #the loop did not work for Jordan, so we need to determine this manually
+
+#add poverty rate for Jordan
+ pov_Jordan <- filter(DHS1, country=='Jordan')
+ pov_Jordan <- pov_Jordan[is.na(pov_Jordan["wealth_index"])==F,]
+ pov_Jordan <- pov_Jordan[order(pov_Jordan$'wealth_index'), ] 
+ pov_Jordan <- pov_Jordan %>% dplyr::mutate(hh_members = row_number()) 
+ 
+ cutoff19 = as.integer(58965  * 0.001) #(number of people*poverty headcount ratio)
+ pov_Jordan <- pov_Jordan %>%
+   mutate(poor19 = ifelse(hh_members < 58, 1, 0))
+
+ cutoff32 = as.integer(58965  * 0.02) #(number of people*poverty headcount ratio)
+ pov_Jordan <- pov_Jordan %>%
+   mutate(poor32 = ifelse(hh_members < 1179, 1, 0))
+
+ cutoff55 = as.integer(58965  * 0.175) #(number of people*poverty headcount ratio)
+ pov_Jordan <- pov_Jordan %>%
+   mutate(poor55 = ifelse(hh_members < 10318, 1, 0))
+  
+#add Jordan to main DHS file and save DHS main that now includes poverty rates
+  pov.dhs <- pov.dhs %>% bind_rows(pov_Jordan)
+  DHS.poverty <- select(pov.dhs, -hh_members) #we no longer need row numbers
+  write.csv(DHS.poverty, "~/DHS.poverty.csv")
+
+```
+
+
+```{r add poverty data for HPACC}
+
+#load in file
+  HPACC1 <- read.csv("D:/HPACC1.csv", stringsAsFactors=F) 
+  HPACC1  <- HPACC1 [,-1]
+ 
+#before poverty calculation can be done we need to format a bit     
+#set these NA so that they dont mess up income calculation
+  HPACC1 <- HPACC1 %>% dplyr::na_if(999999999)
+  HPACC1 <- HPACC1 %>% dplyr::na_if(777777777)
+  HPACC1 <- HPACC1 %>% dplyr::na_if(888888888)
+  HPACC1 <- HPACC1 %>% dplyr::na_if(666666666)
+     
+#Fix years to allow for merging below
+  HPACC1$year[HPACC1$year == "2009-12"] <- "2011" #Mexico
+  HPACC1$year[HPACC1$year == "2015-2016"] <- "2016" #India, Romania
+  HPACC1$year[HPACC1$year == "2007/8"] <- "2008" #Ghana
+  HPACC1<-HPACC1[!(HPACC1$country=='India'),] #remove India, because this is in dhs file
+
+###in contrast to the DHS file this time the poverty calculation cannot be done in a loop. The STEPS file uses different variables for income  
+###the first step is to determine which income variables is best to be used. STEPS includes yearly, monthly, weekly numbers. Then the same procedure as for the DHS can be applied, thus ordering people by their wealth for each country, assign a row number and then determine the respective cut-offs for each of the three poverty levels (1.90, 3.20, 5.50)
+  
+#Mexico  
+  HPACC_Mexico <- filter(HPACC1, country=='Mexico')
+  HPACC_Mexico <- HPACC_Mexico %>%
+   unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+   mutate(income = income_yr)%>% 
+   mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+          income = ifelse((is.na(income)==T), income_wk*52, income))
+  
+  HPACC_Mexico <- HPACC_Mexico[order(HPACC_Mexico$'income'), ] #Mexico hat ca 70% missings in income
+  HPACC_Mexico <- HPACC_Mexico %>% dplyr::mutate(hh_members = row_number())
+  dta_set <- HPACC_Mexico[is.na(HPACC_Mexico["income"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+  HPACC_Mexico <- HPACC_Mexico %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+  HPACC_Mexico <- HPACC_Mexico %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+  HPACC_Mexico <- HPACC_Mexico %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   
+  HPACC_Mexico <- HPACC_Mexico %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+  HPACC_Mexico <- HPACC_Mexico %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+  HPACC_Mexico <- HPACC_Mexico %>% mutate( 
+    poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+ #Uganda  
+
+  HPACC_Uganda <- filter(HPACC1, country=='Uganda')%>%  
+   mutate(income = 52 * income_wk)   #had to use weekly income because other seemed of bad quality
+
+  HPACC_Uganda <- HPACC_Uganda[order(HPACC_Uganda$'income'), ]
+  HPACC_Uganda <- HPACC_Uganda %>% dplyr::mutate(hh_members = row_number())
+  dta_set <- HPACC_Uganda[is.na(HPACC_Uganda["income"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+  HPACC_Uganda <- HPACC_Uganda %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+  HPACC_Uganda <- HPACC_Uganda %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+  HPACC_Uganda <- HPACC_Uganda %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+  HPACC_Uganda <- HPACC_Uganda %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+  HPACC_Uganda <- HPACC_Uganda %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+  HPACC_Uganda <- HPACC_Uganda %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+
+ #Comoros 
+   HPACC_Comoros <- filter(HPACC1, country=='Comoros') %>% 
+       unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+ 
+   HPACC_Comoros <- HPACC_Comoros[order(HPACC_Comoros$'income_std'), ]
+   HPACC_Comoros <- HPACC_Comoros %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- HPACC_Comoros[is.na(HPACC_Comoros["income_std"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Comoros <- HPACC_Comoros %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Comoros <- HPACC_Comoros %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Comoros <- HPACC_Comoros %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Comoros <- HPACC_Comoros %>% mutate( 
+     poor19 = ifelse(is.na(income_std)==T, NA, poor19))
+   HPACC_Comoros <- HPACC_Comoros %>% mutate( 
+     poor32 = ifelse(is.na(income_std)==T, NA, poor32))
+   HPACC_Comoros <- HPACC_Comoros %>% mutate( 
+     poor55 = ifelse(is.na(income_std)==T, NA, poor55))
+   
+ #Swaziland 
+  HPACC_Swaziland  <- filter(HPACC1, country=='Swaziland') 
+  HPACC_Swaziland <- HPACC_Swaziland %>% 
+   unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+   mutate(income = income_yr)%>% 
+   mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+          income = ifelse((is.na(income)==T), income_wk*52, income)) 
+  
+   HPACC_Swaziland <- HPACC_Swaziland[order(HPACC_Swaziland$'income'), ]
+   HPACC_Swaziland <- HPACC_Swaziland %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- HPACC_Swaziland[is.na(HPACC_Swaziland["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Swaziland <- HPACC_Swaziland %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Swaziland <- HPACC_Swaziland %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Swaziland <- HPACC_Swaziland %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Swaziland <- HPACC_Swaziland %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Swaziland <- HPACC_Swaziland %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Swaziland <- HPACC_Swaziland %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+ #Romania   
+  HPACC_Romania  <- filter(HPACC1, country=='Romania')
+  HPACC_Romania <- HPACC_Romania %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE) %>% 
+     mutate(income = income_yr) %>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+   HPACC_Romania <- HPACC_Romania[order(HPACC_Romania$'income'), ]
+   HPACC_Romania <- HPACC_Romania %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- HPACC_Romania[is.na(HPACC_Romania["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Romania <- HPACC_Romania %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Romania <- HPACC_Romania %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Romania <- HPACC_Romania %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Romania <- HPACC_Romania %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Romania <- HPACC_Romania %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Romania <- HPACC_Romania %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+ #Tanzania 
+  HPACC_Tanzania <- filter(HPACC1, country=='Tanzania')
+  HPACC_Tanzania <- HPACC_Tanzania %>% 
+    unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+    mutate(income=income_std)
+  
+ HPACC_Tanzania <- HPACC_Tanzania[order(HPACC_Tanzania$'income'), ]
+ HPACC_Tanzania <- HPACC_Tanzania %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- HPACC_Tanzania[is.na(HPACC_Tanzania["income"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ HPACC_Tanzania <- HPACC_Tanzania %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ HPACC_Tanzania <- HPACC_Tanzania %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ HPACC_Tanzania <- HPACC_Tanzania %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+ HPACC_Tanzania <- HPACC_Tanzania %>% mutate( 
+   poor19 = ifelse(is.na(income)==T, NA, poor19))
+ HPACC_Tanzania <- HPACC_Tanzania %>% mutate( 
+   poor32 = ifelse(is.na(income)==T, NA, poor32))
+ HPACC_Tanzania <- HPACC_Tanzania %>% mutate( 
+   poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+ #Zanzibar  
+   HPACC_Zanzibar <- filter(HPACC1, country=='Zanzibar') 
+   HPACC_Zanzibar <- HPACC_Zanzibar[order(HPACC_Zanzibar$'income_std'), ]
+   HPACC_Zanzibar <- HPACC_Zanzibar %>% 
+     dplyr::mutate(hh_members = row_number()) %>%
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+   
+   cutoff19 = as.integer(2485 * 0.431) #http://documents.worldbank.org/curated/en/778051509021699937/pdf/120689-WP-P164456-PUBLIC-11-3-17-25-10-2017-20-15-5-ZanzibarPovertyAssessment.pdf used this one for the 1.90USD poverty line
+   
+   HPACC_Zanzibar$country[HPACC_Zanzibar$country == "Zanzibar"] <- "Tanzania" #for the other two poverty lines I had to use data from Tanzania
+   dta_set <- HPACC_Zanzibar[is.na(HPACC_Zanzibar["income_std"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Zanzibar <- HPACC_Zanzibar %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Zanzibar <- HPACC_Zanzibar %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Zanzibar <- HPACC_Zanzibar %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Zanzibar <- HPACC_Zanzibar %>% mutate( 
+     poor19 = ifelse(is.na(income_std)==T, NA, poor19))
+   HPACC_Zanzibar <- HPACC_Zanzibar %>% mutate( 
+     poor32 = ifelse(is.na(income_std)==T, NA, poor32))
+   HPACC_Zanzibar <- HPACC_Zanzibar %>% mutate( 
+     poor55 = ifelse(is.na(income_std)==T, NA, poor55))
+   HPACC_Zanzibar$country[HPACC_Zanzibar$country == "Tanzania"] <- "Zanzibar"  #change country name back to Zanzibar
+ 
+#Liberia
+  HPACC_Liberia <- filter(HPACC1, country=='Liberia')
+  HPACC_Liberia <- HPACC_Liberia %>% 
+    unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE) %>% 
+    mutate(income = income_yr)%>% 
+    mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+           income = ifelse((is.na(income)==T), income_wk*52, income))
+  
+   HPACC_Liberia <- HPACC_Liberia[order(HPACC_Liberia$'income'), ]
+   HPACC_Liberia <- HPACC_Liberia %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- HPACC_Liberia[is.na(HPACC_Liberia["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Liberia <- HPACC_Liberia %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Liberia <- HPACC_Liberia %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Liberia <- HPACC_Liberia %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Liberia <- HPACC_Liberia %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Liberia <- HPACC_Liberia %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Liberia <- HPACC_Liberia %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+
+#Bhutan
+   HPACC_Bhutan <- filter(HPACC1, country=='Bhutan')
+   HPACC_Bhutan <- HPACC_Bhutan %>% dplyr::na_if(999999999)
+   HPACC_Bhutan <- HPACC_Bhutan %>% dplyr::na_if(777777777)
+   HPACC_Bhutan <- HPACC_Bhutan %>% dplyr::na_if(888888888)
+   HPACC_Bhutan <- HPACC_Bhutan %>% dplyr::na_if(666666666)
+   HPACC_Bhutan <- HPACC_Bhutan %>% dplyr::na_if(1000000000)
+   HPACC_Bhutan <- HPACC_Bhutan %>% 
+      unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+      mutate(income = income_yr)%>% 
+      mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+             income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   HPACC_Bhutan <- HPACC_Bhutan[order(HPACC_Bhutan$'income'), ]
+   HPACC_Bhutan <- HPACC_Bhutan %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- HPACC_Bhutan[is.na(HPACC_Bhutan["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Bhutan <- HPACC_Bhutan %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Bhutan <- HPACC_Bhutan %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Bhutan <- HPACC_Bhutan %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Bhutan <- HPACC_Bhutan %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Bhutan <- HPACC_Bhutan %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Bhutan <- HPACC_Bhutan %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+
+ 
+#Benin
+  HPACC_Benin <- filter(HPACC1, country=='Benin')
+  HPACC_Benin <- HPACC_Benin %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+ 
+   HPACC_Benin <- HPACC_Benin[order(HPACC_Benin$'income'), ] 
+   HPACC_Benin <- HPACC_Benin %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- HPACC_Benin[is.na(HPACC_Benin["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Benin <- HPACC_Benin %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Benin <- HPACC_Benin %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Benin <- HPACC_Benin %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Benin <- HPACC_Benin %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Benin <- HPACC_Benin %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Benin <- HPACC_Benin %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+#Timor-Leste
+   HPACC_Timor_Leste <- filter(HPACC1, country=='Timor Leste')
+   HPACC_Timor_Leste <- HPACC_Timor_Leste %>% 
+       unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+       mutate(income = income_yr)%>% 
+       mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+              income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   HPACC_Timor_Leste <- HPACC_Timor_Leste[order(HPACC_Timor_Leste$'income'), ]
+   HPACC_Timor_Leste <- HPACC_Timor_Leste %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- HPACC_Timor_Leste[is.na(HPACC_Timor_Leste["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     #Change spelling of timor leste for merge
+     poverty_ratios$country[poverty_ratios$country == "Timor-Leste"] <- "Timor Leste"
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     poverty_ratios$country[poverty_ratios$country == "Timor Leste"] <- "Timor-Leste"
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Timor_Leste <- HPACC_Timor_Leste %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Timor_Leste <- HPACC_Timor_Leste %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Timor_Leste <- HPACC_Timor_Leste %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Timor_Leste <- HPACC_Timor_Leste %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Timor_Leste <- HPACC_Timor_Leste %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Timor_Leste <- HPACC_Timor_Leste %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+#Georgia
+  HPACC_Georgia <- filter(HPACC1, country=='Georgia')
+  HPACC_Georgia <- HPACC_Georgia %>% 
+   unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE) %>% 
+   mutate(income = income_yr) %>% 
+   mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+          income = ifelse((is.na(income)==T), income_wk*52, income))
+  
+   HPACC_Georgia <- HPACC_Georgia[order(HPACC_Georgia$'income'), ] 
+   HPACC_Georgia <- HPACC_Georgia %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- HPACC_Georgia[is.na(HPACC_Georgia["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Georgia <- HPACC_Georgia %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Georgia <- HPACC_Georgia %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Georgia <- HPACC_Georgia %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Georgia <- HPACC_Georgia %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Georgia <- HPACC_Georgia %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Georgia <- HPACC_Georgia %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+
+#Brazil
+   HPACC_Brazil <- filter(HPACC1, country=='Brazil')
+   HPACC_Brazil <- HPACC_Brazil[order(HPACC_Brazil$'asset_index'), ] 
+   HPACC_Brazil <- HPACC_Brazil %>% 
+     mutate(hh_members = row_number()) %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+  
+   dta_set <- HPACC_Brazil[is.na(HPACC_Brazil["asset_index"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Brazil <- HPACC_Brazil %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Brazil <- HPACC_Brazil %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Brazil <- HPACC_Brazil %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Brazil <- HPACC_Brazil %>% mutate( 
+     poor19 = ifelse(is.na(asset_index)==T, NA, poor19))
+   HPACC_Brazil <- HPACC_Brazil %>% mutate( 
+     poor32 = ifelse(is.na(asset_index)==T, NA, poor32))
+   HPACC_Brazil <- HPACC_Brazil %>% mutate( 
+     poor55 = ifelse(is.na(asset_index)==T, NA, poor55))
+
+#Indonesia
+   HPACC_Indonesia <- filter(HPACC1, country=='Indonesia')
+   HPACC_Indonesia <- HPACC_Indonesia[order(HPACC_Indonesia$'asset_index'), ] 
+   HPACC_Indonesia <- HPACC_Indonesia %>% dplyr::mutate(hh_members = row_number()) 
+     cutoff19 = as.integer(32710  * 0.045) #
+   HPACC_Indonesia <- HPACC_Indonesia %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+   dta_set <- HPACC_Indonesia[is.na(HPACC_Indonesia["asset_index"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Indonesia <- HPACC_Indonesia %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Indonesia <- HPACC_Indonesia %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Indonesia <- HPACC_Indonesia %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Indonesia <- HPACC_Indonesia %>% mutate( 
+     poor19 = ifelse(is.na(asset_index)==T, NA, poor19))
+   HPACC_Indonesia <- HPACC_Indonesia %>% mutate( 
+     poor32 = ifelse(is.na(asset_index)==T, NA, poor32))
+   HPACC_Indonesia <- HPACC_Indonesia %>% mutate( 
+     poor55 = ifelse(is.na(asset_index)==T, NA, poor55))
+
+#Kenya
+   HPACC_Kenya <- filter(HPACC1, country=='Kenya')
+   HPACC_Kenya <- HPACC_Kenya[order(HPACC_Kenya$'asset_index'), ] 
+   HPACC_Kenya <- HPACC_Kenya %>% 
+     mutate(hh_members = row_number())%>%
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+   dta_set <- HPACC_Kenya[is.na(HPACC_Kenya["asset_index"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Kenya <- HPACC_Kenya %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Kenya <- HPACC_Kenya %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Kenya <- HPACC_Kenya %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Kenya <- HPACC_Kenya %>% mutate( 
+     poor19 = ifelse(is.na(asset_index)==T, NA, poor19))
+   HPACC_Kenya <- HPACC_Kenya %>% mutate( 
+     poor32 = ifelse(is.na(asset_index)==T, NA, poor32))
+   HPACC_Kenya <- HPACC_Kenya %>% mutate( 
+     poor55 = ifelse(is.na(asset_index)==T, NA, poor55))
+
+#Albania
+   HPACC_Albania <- filter(HPACC1, country=='Albania')
+   HPACC_Albania <- HPACC_Albania[order(HPACC_Albania$'asset_index'), ] 
+   HPACC_Albania <- HPACC_Albania %>% dplyr::
+     mutate(hh_members = row_number()) %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+   dta_set <- HPACC_Albania[is.na(HPACC_Albania["asset_index"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Albania <- HPACC_Albania %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Albania <- HPACC_Albania %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Albania <- HPACC_Albania %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Albania <- HPACC_Albania %>% mutate( 
+     poor19 = ifelse(is.na(asset_index)==T, NA, poor19))
+   HPACC_Albania <- HPACC_Albania %>% mutate( 
+     poor32 = ifelse(is.na(asset_index)==T, NA, poor32))
+   HPACC_Albania <- HPACC_Albania %>% mutate( 
+     poor55 = ifelse(is.na(asset_index)==T, NA, poor55))
+
+#Mozambique
+   HPACC_Mozambique <- filter(HPACC1, country=='Mozambique')
+   HPACC_Mozambique <- HPACC_Mozambique %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+     mutate(income = income_yr) %>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   HPACC_Mozambique <- HPACC_Mozambique[order(HPACC_Mozambique$'income'), ]  
+   HPACC_Mozambique <- HPACC_Mozambique %>% dplyr::mutate(hh_members = row_number()) 
+   dta_set <- HPACC_Mozambique[is.na(HPACC_Mozambique["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Mozambique <- HPACC_Mozambique %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Mozambique <- HPACC_Mozambique %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Mozambique <- HPACC_Mozambique %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Mozambique <- HPACC_Mozambique %>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Mozambique <- HPACC_Mozambique %>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Mozambique <- HPACC_Mozambique %>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+#Egypt
+   HPACC_Egypt <- filter(HPACC1, country=='Egypt')
+   HPACC_Egypt <- HPACC_Egypt[order(HPACC_Egypt$'asset_index'), ] 
+   HPACC_Egypt <- HPACC_Egypt %>% 
+     mutate(hh_members = row_number())  %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+     
+   dta_set <- HPACC_Egypt[is.na(HPACC_Egypt["asset_index"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Egypt<- HPACC_Egypt%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Egypt<- HPACC_Egypt%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Egypt<- HPACC_Egypt%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Egypt<- HPACC_Egypt%>% mutate( 
+     poor19 = ifelse(is.na(asset_index)==T, NA, poor19))
+   HPACC_Egypt<- HPACC_Egypt%>% mutate( 
+     poor32 = ifelse(is.na(asset_index)==T, NA, poor32))
+   HPACC_Egypt<- HPACC_Egypt%>% mutate( 
+     poor55 = ifelse(is.na(asset_index)==T, NA, poor55))
+
+#Nepal
+   HPACC_Nepal <- filter(HPACC1, country=='Nepal')
+   HPACC_Nepal <- HPACC_Nepal[order(HPACC_Nepal$'asset_index'), ] 
+   HPACC_Nepal <- HPACC_Nepal %>% dplyr::mutate(hh_members = row_number()) 
+    cutoff19 = as.integer(4143 * 0.121) #
+   HPACC_Nepal <- HPACC_Nepal %>% 
+    unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+  
+   dta_set <- HPACC_Nepal[is.na(HPACC_Nepal["asset_index"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Nepal<- HPACC_Nepal%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Nepal<- HPACC_Nepal%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Nepal<- HPACC_Nepal%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Nepal<- HPACC_Nepal%>% mutate( 
+     poor19 = ifelse(is.na(asset_index)==T, NA, poor19))
+   HPACC_Nepal<- HPACC_Nepal%>% mutate( 
+     poor32 = ifelse(is.na(asset_index)==T, NA, poor32))
+   HPACC_Nepal<- HPACC_Nepal%>% mutate( 
+     poor55 = ifelse(is.na(asset_index)==T, NA, poor55))
+
+#Togo
+   HPACC_Togo <- filter(HPACC1, country=='Togo')
+   HPACC_Togo <- HPACC_Togo %>% 
+      unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE) %>% 
+      mutate(income = income_std)
+                             
+   HPACC_Togo <- HPACC_Togo[order(HPACC_Togo$'income'), ] 
+   HPACC_Togo <- HPACC_Togo %>% dplyr::mutate(hh_members = row_number()) 
+   dta_set <- HPACC_Togo[is.na(HPACC_Togo["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Togo<- HPACC_Togo%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Togo<- HPACC_Togo%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Togo<- HPACC_Togo%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Togo<- HPACC_Togo%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Togo<- HPACC_Togo%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Togo<- HPACC_Togo%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+
+#Ghana
+   HPACC_Ghana <- filter(HPACC1, country=='Ghana')
+   HPACC_Ghana <- HPACC_Ghana[order(HPACC_Ghana$'asset_index'), ] 
+   HPACC_Ghana <- HPACC_Ghana %>% 
+     mutate(hh_members = row_number()) 
+     cutoff19 = as.integer(5565 * 0.104)  #
+   HPACC_Ghana <- HPACC_Ghana %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+   
+   dta_set <- HPACC_Ghana[is.na(HPACC_Ghana["asset_index"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Ghana<- HPACC_Ghana%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Ghana<- HPACC_Ghana%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Ghana<- HPACC_Ghana%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Ghana<- HPACC_Ghana%>% mutate( 
+     poor19 = ifelse(is.na(asset_index)==T, NA, poor19))
+   HPACC_Ghana<- HPACC_Ghana%>% mutate( 
+     poor32 = ifelse(is.na(asset_index)==T, NA, poor32))
+   HPACC_Ghana<- HPACC_Ghana%>% mutate( 
+     poor55 = ifelse(is.na(asset_index)==T, NA, poor55))
+  
+#Vanuatu
+   HPACC_Vanuatu <- filter(HPACC1, country=='Vanuatu')
+   HPACC_Vanuatu <- HPACC_Vanuatu %>%
+    unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+    mutate(income = income_yr) %>% 
+    mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+          income = ifelse((is.na(income)==T), income_wk*52, income))
+   HPACC_Vanuatu <- HPACC_Vanuatu[order(HPACC_Vanuatu$'income'), ]
+   HPACC_Vanuatu <- HPACC_Vanuatu %>% dplyr::mutate(hh_members = row_number())   
+  
+   dta_set <- HPACC_Vanuatu[is.na(HPACC_Vanuatu["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Vanuatu<- HPACC_Vanuatu%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Vanuatu<- HPACC_Vanuatu%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Vanuatu<- HPACC_Vanuatu%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Vanuatu<- HPACC_Vanuatu%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_Vanuatu<- HPACC_Vanuatu%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_Vanuatu<- HPACC_Vanuatu%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+
+ #China
+  HPACC_China <- filter(HPACC1, country=='China')
+  HPACC_China <- HPACC_China %>% unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE) %>% 
+   mutate(income = income_yr)%>% 
+   mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+          income = ifelse((is.na(income)==T), income_wk*52, income))
+  HPACC_China <- HPACC_China[order(HPACC_China$'income'), ] 
+  HPACC_China <-  HPACC_China %>% dplyr::mutate(hh_members = row_number())   
+  
+   dta_set <- HPACC_China[is.na(HPACC_China["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_China<- HPACC_China%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_China<- HPACC_China%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_China<- HPACC_China%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_China<- HPACC_China%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   HPACC_China<- HPACC_China%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   HPACC_China<- HPACC_China%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+#Botswana
+   pov.botswana <- filter(HPACC1, country=='Botswana')
+   pov.botswana <- pov.botswana %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+          income = ifelse((is.na(income)==T), income_wk*52, income))
+   
+   pov.botswana <- pov.botswana[order(pov.botswana$'income'), ]
+   pov.botswana <- pov.botswana %>% dplyr::mutate(hh_members = row_number())   
+   dta_set <- pov.botswana[is.na(pov.botswana["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.botswana<- pov.botswana%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.botswana<- pov.botswana%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.botswana<- pov.botswana%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.botswana<- pov.botswana%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.botswana<- pov.botswana%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.botswana<- pov.botswana%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+#Iran
+   pov.iran <- filter(HPACC1, country=='Iran')
+   pov.iran <- pov.iran %>% 
+                unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+   pov.iran <- pov.iran[order(pov.iran$'asset_index'), ]
+   pov.iran <- pov.iran %>% dplyr::mutate(hh_members = row_number())
+  
+   dta_set <- pov.iran[is.na(pov.iran["asset_index"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.iran<- pov.iran%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.iran<- pov.iran%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.iran<- pov.iran%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.iran<- pov.iran%>% mutate( 
+     poor19 = ifelse(is.na(asset_index)==T, NA, poor19))
+   pov.iran<- pov.iran%>% mutate( 
+     poor32 = ifelse(is.na(asset_index)==T, NA, poor32))
+   pov.iran<- pov.iran%>% mutate( 
+     poor55 = ifelse(is.na(asset_index)==T, NA, poor55))
+ 
+ #Morocco
+  pov.morocco <- filter(HPACC1, country=='Morocco')
+  pov.morocco <- pov.morocco %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE) %>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+             income = ifelse((is.na(income)==T), income_wk*52, income))
+
+  pov.morocco <- pov.morocco[order(pov.morocco$'income'), ]
+  pov.morocco <- pov.morocco %>% dplyr::mutate(hh_members = row_number())   
+  dta_set <- pov.morocco[is.na(pov.morocco["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.morocco<- pov.morocco%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.morocco<- pov.morocco%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.morocco<- pov.morocco%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.morocco<- pov.morocco%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.morocco<- pov.morocco%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.morocco<- pov.morocco%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+ #Zambia
+   pov.zambia <- filter(HPACC1, country=='Zambia')
+   pov.zambia <- pov.zambia %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)%>% 
+     mutate(income = income_yr) %>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+   
+   pov.zambia <- pov.zambia[order(pov.zambia$'income'), ]
+   pov.zambia <- pov.zambia %>% dplyr::mutate(hh_members = row_number())   
+   dta_set <- pov.zambia[is.na(pov.zambia["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.zambia<- pov.zambia%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.zambia<- pov.zambia%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.zambia<- pov.zambia%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.zambia<- pov.zambia%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.zambia<- pov.zambia%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.zambia<- pov.zambia%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+ #Algeria
+  pov.algeria <- filter(HPACC1, country=='Algeria')
+  pov.algeria <- pov.algeria %>% 
+    unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE) %>% 
+    mutate(income = income_yr) %>% 
+    mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+           income = ifelse((is.na(income)==T), income_wk*52, income))
+  
+   pov.algeria <- pov.algeria[order(pov.algeria$'income'), ]
+   pov.algeria <- pov.algeria %>% dplyr::mutate(hh_members = row_number())   
+   dta_set <- pov.algeria[is.na(pov.algeria["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.algeria<- pov.algeria%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.algeria<- pov.algeria%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.algeria<- pov.algeria%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.algeria<- pov.algeria%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.algeria<- pov.algeria%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.algeria<- pov.algeria%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+#Kiribati
+   pov.kiribati <- filter(HPACC1, country=='Kiribati')%>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.kiribati <- pov.kiribati[order(pov.kiribati$'income'), ]
+   pov.kiribati <- pov.kiribati %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.kiribati[is.na(pov.kiribati["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.kiribati<- pov.kiribati%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.kiribati<- pov.kiribati%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.kiribati<- pov.kiribati%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.kiribati<- pov.kiribati%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.kiribati<- pov.kiribati%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.kiribati<- pov.kiribati%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+ 
+ # Kyrgyz Republic
+   pov.kyryz <- filter(HPACC1, country=='Kyrgyzstan')%>% 
+     mutate(income = income_yr) %>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+  
+   pov.kyryz <- pov.kyryz[order(pov.kyryz$'income'), ]
+   pov.kyryz <- pov.kyryz %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.kyryz[is.na(pov.kyryz["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     poverty_ratios$country[poverty_ratios$country == "Kyrgyz Republic"] <- "Kyrgyzstan"  # rename Kyrgyz Republic to merge
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.kyryz<- pov.kyryz%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.kyryz<- pov.kyryz%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.kyryz<- pov.kyryz%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.kyryz<- pov.kyryz%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.kyryz<- pov.kyryz%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.kyryz<- pov.kyryz%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.kyryz <- select(pov.kyryz, -hh_members)
+ 
+ # Laos
+   pov.laos <- filter(HPACC1, country=='Laos')%>% 
+     mutate( income = income_yr) %>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+  
+   pov.laos <- pov.laos[order(pov.laos$'income'), ]
+   pov.laos <- pov.laos %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.laos[is.na(pov.laos["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.laos<- pov.laos%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.laos<- pov.laos%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.laos<- pov.laos%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.laos<- pov.laos%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.laos<- pov.laos%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.laos<- pov.laos%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.laos <- select(pov.laos, -hh_members)
+
+#Myanmar
+  pov.myanmar <- filter(HPACC1, country=='Myanmar') %>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+  
+   pov.myanmar <- pov.myanmar[order(pov.myanmar$'income'), ]
+   pov.myanmar <- pov.myanmar %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.myanmar[is.na(pov.myanmar["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.myanmar<- pov.myanmar%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.myanmar<- pov.myanmar%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.myanmar<- pov.myanmar%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.myanmar<- pov.myanmar%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.myanmar<- pov.myanmar%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.myanmar<- pov.myanmar%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.myanmar <- select(pov.myanmar, -hh_members)
+ 
+#Niger
+  pov.niger <- filter(HPACC1, country=='Niger') %>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.niger <- pov.niger[order(pov.niger$'income'), ]
+   pov.niger <- pov.niger %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.niger[is.na(pov.niger["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.niger<- pov.niger%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.niger<- pov.niger%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.niger<- pov.niger%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.niger<- pov.niger%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.niger<- pov.niger%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.niger<- pov.niger%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.niger <- select(pov.niger, -hh_members)
+ 
+#Rwanda
+  pov.rwanda <- filter(HPACC1, country=='Rwanda') %>% 
+     mutate(income = income_yr) %>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.rwanda <- pov.rwanda[order(pov.rwanda$'income'), ]
+   pov.rwanda <- pov.rwanda %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.rwanda[is.na(pov.rwanda["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.rwanda<- pov.rwanda%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.rwanda<- pov.rwanda%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.rwanda<- pov.rwanda%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.rwanda<- pov.rwanda%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.rwanda<- pov.rwanda%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.rwanda<- pov.rwanda%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.rwanda <- select(pov.rwanda, -hh_members)
+ 
+#Samoa
+  pov.samoa <- filter(HPACC1, country=='Samoa')%>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.samoa <- pov.samoa[order(pov.samoa$'income'), ]
+   pov.samoa <- pov.samoa %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.samoa[is.na(pov.samoa["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.samoa<- pov.samoa%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.samoa<- pov.samoa%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.samoa<- pov.samoa%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.samoa<- pov.samoa%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.samoa<- pov.samoa%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.samoa<- pov.samoa%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.samoa <- select(pov.samoa, -hh_members)
+ 
+#Sao Tome and Principe
+  pov.sao <- filter(HPACC1, country=='Sao Tome and Principe')%>% 
+     mutate(income = income_yr)%>% 
+     mutate( income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.sao <- pov.sao[order(pov.sao$'income'), ]
+   pov.sao <- pov.sao %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.sao[is.na(pov.sao["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.sao<- pov.sao%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.sao<- pov.sao%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.sao<- pov.sao%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.sao<- pov.sao%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.sao<- pov.sao%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.sao<- pov.sao%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.sao <- select(pov.sao, -hh_members)
+ 
+#Solomon Islands
+  pov.solomon <- filter(HPACC1, country=='Solomon Islands')%>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.solomon <- pov.solomon[order(pov.solomon$'income'), ]
+   pov.solomon <- pov.solomon %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.solomon[is.na(pov.solomon["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.solomon<- pov.solomon%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.solomon<- pov.solomon%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.solomon<- pov.solomon%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.solomon<- pov.solomon%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.solomon<- pov.solomon%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.solomon<- pov.solomon%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.solomon <- select(pov.solomon, -hh_members)
+ 
+#Tajikistan
+  pov.tajikistan <- filter(HPACC1, country=='Tajikistan')%>% 
+     mutate(income = income_yr) %>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.tajikistan <- pov.tajikistan[order(pov.tajikistan$'income'), ]
+   pov.tajikistan <- pov.tajikistan %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.tajikistan[is.na(pov.tajikistan["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.tajikistan<- pov.tajikistan%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.tajikistan<- pov.tajikistan%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.tajikistan<- pov.tajikistan%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.tajikistan<- pov.tajikistan%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.tajikistan<- pov.tajikistan%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.tajikistan<- pov.tajikistan%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.tajikistan <- select(pov.tajikistan, -hh_members)
+ 
+#Tuvalu
+  pov.tuvalu <- filter(HPACC1, country=='Tuvalu')%>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income)) 
+
+   pov.tuvalu <- pov.tuvalu[order(pov.tuvalu$'income'), ]
+   pov.tuvalu <- pov.tuvalu %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.tuvalu[is.na(pov.tuvalu["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.tuvalu<- pov.tuvalu%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.tuvalu<- pov.tuvalu%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.tuvalu<- pov.tuvalu%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.tuvalu<- pov.tuvalu%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.tuvalu<- pov.tuvalu%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.tuvalu<- pov.tuvalu%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.tuvalu <- select(pov.tuvalu, -hh_members)
+ 
+#Tonga
+   pov.tonga <- filter(HPACC1, country=='Tonga')
+#reorder categorical income levels
+   pov.tonga$income_cat <- factor(pov.tonga$income_cat, levels = c("$1-$500", "$501-$1000", "$1001-$2000","More than $2000", ""))
+   pov.tonga <- pov.tonga[order(pov.tonga$'income_cat'), ]
+   pov.tonga <- pov.tonga %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.tonga[is.na(pov.tonga["income_cat"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.tonga<- pov.tonga%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.tonga<- pov.tonga%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.tonga<- pov.tonga%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.tonga<- pov.tonga%>% mutate( 
+     poor19 = ifelse(is.na(income_cat)==T, NA, poor19))
+   pov.tonga<- pov.tonga%>% mutate( 
+     poor32 = ifelse(is.na(income_cat)==T, NA, poor32))
+   pov.tonga<- pov.tonga%>% mutate( 
+     poor55 = ifelse(is.na(income_cat)==T, NA, poor55))
+   pov.tonga <- select(pov.tonga, -hh_members)
+ 
+#Cabo Verde
+  pov.cabo <- filter(HPACC1, country=='Cabo Verde') %>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.cabo <- pov.cabo[order(pov.cabo$'income'), ]
+   pov.cabo <- pov.cabo %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.cabo[is.na(pov.cabo["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.cabo<- pov.cabo%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.cabo<- pov.cabo%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.cabo<- pov.cabo%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.cabo<- pov.cabo%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.cabo<- pov.cabo%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.cabo<- pov.cabo%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.cabo <- select(pov.cabo, -hh_members)
+    
+# Ecuador
+  pov.ecuador <- filter(HPACC1, country=='Ecuador') %>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.ecuador <- pov.ecuador[order(pov.ecuador$'income'), ]
+   pov.ecuador <- pov.ecuador %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.ecuador[is.na(pov.ecuador["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.ecuador<- pov.ecuador%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.ecuador<- pov.ecuador%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.ecuador<- pov.ecuador%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.ecuador<- pov.ecuador%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.ecuador<- pov.ecuador%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.ecuador<- pov.ecuador%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.ecuador <- select(pov.ecuador, -hh_members)
+ 
+ # Gambia
+   pov.gambia <- filter(HPACC1, country=='Gambia')%>% 
+     mutate(income = income_yr)%>% 
+     mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+            income = ifelse((is.na(income)==T), income_wk*52, income))
+    
+   pov.gambia <- pov.gambia[order(pov.gambia$'income'), ]
+   pov.gambia <- pov.gambia %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.gambia[is.na(pov.gambia["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.gambia<- pov.gambia%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.gambia<- pov.gambia%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.gambia<- pov.gambia%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.gambia<- pov.gambia%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.gambia<- pov.gambia%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.gambia<- pov.gambia%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.gambia <- select(pov.gambia, -hh_members)
+ 
+#Malawi
+   pov.malawi <- filter(HPACC1, country=='Malawi')%>% 
+    mutate(income = income_yr)%>% 
+    mutate(income = ifelse((is.na(income)==T), income_mth*12, income),
+           income = ifelse((is.na(income)==T), income_wk*52, income))
+
+   pov.malawi <- pov.malawi[order(pov.malawi$'income'), ]
+   pov.malawi <- pov.malawi %>% dplyr::mutate(hh_members = row_number())
+   dta_set <- pov.malawi[is.na(pov.malawi["income"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   pov.malawi<- pov.malawi%>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   pov.malawi<- pov.malawi%>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   pov.malawi<- pov.malawi%>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   pov.malawi<- pov.malawi%>% mutate( 
+     poor19 = ifelse(is.na(income)==T, NA, poor19))
+   pov.malawi<- pov.malawi%>% mutate( 
+     poor32 = ifelse(is.na(income)==T, NA, poor32))
+   pov.malawi<- pov.malawi%>% mutate( 
+     poor55 = ifelse(is.na(income)==T, NA, poor55))
+   pov.malawi <- select(pov.malawi, -hh_members)
+ 
+#Mongolia 2019
+ HPACC_Mongolia <- filter(HPACC1, country=='Mongolia')
+ HPACC_Mongolia <- HPACC_Mongolia[order(HPACC_Mongolia$'wealth_quintile'), ] 
+ HPACC_Mongolia <- HPACC_Mongolia %>% 
+   mutate(hh_members = row_number()) %>% 
+   unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+ dta_set <- HPACC_Mongolia[is.na(HPACC_Mongolia["wealth_quintile"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ HPACC_Mongolia <- HPACC_Mongolia %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ HPACC_Mongolia <- HPACC_Mongolia %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ HPACC_Mongolia <- HPACC_Mongolia %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+ HPACC_Mongolia <- HPACC_Mongolia %>% mutate( 
+   poor19 = ifelse(is.na(wealth_quintile)==T, NA, poor19))
+ HPACC_Mongolia <- HPACC_Mongolia %>% mutate( 
+   poor32 = ifelse(is.na(wealth_quintile)==T, NA, poor32))
+ HPACC_Mongolia <- HPACC_Mongolia %>% mutate( 
+   poor55 = ifelse(is.na(wealth_quintile)==T, NA, poor55))
+ 
+#Jordan 2019
+   HPACC_Jordan <- filter(HPACC1, country=='Jordan')
+   HPACC_Jordan <- HPACC_Jordan[order(HPACC_Jordan$'wealth_quintile'), ] 
+   HPACC_Jordan <- HPACC_Jordan %>% dplyr::mutate(hh_members = row_number()) 
+   dta_set <- HPACC_Jordan[is.na(HPACC_Jordan["wealth_quintile"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year <- n_obs_per_year %>% mutate(
+       YRpov19 = 0.1,
+       YRpov32 = 2.0,
+       YRpov55 = 17.5)
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Jordan <- HPACC_Jordan %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Jordan <- HPACC_Jordan %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Jordan <- HPACC_Jordan %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Jordan <- HPACC_Jordan %>% mutate( 
+     poor19 = ifelse(is.na(wealth_quintile)==T, NA, poor19))
+   HPACC_Jordan <- HPACC_Jordan %>% mutate( 
+     poor32 = ifelse(is.na(wealth_quintile)==T, NA, poor32))
+   HPACC_Jordan <- HPACC_Jordan %>% mutate( 
+     poor55 = ifelse(is.na(wealth_quintile)==T, NA, poor55))
+ 
+ #Ethiopia 2015
+   HPACC_Ethiopia <- filter(HPACC1, country=='Ethiopia')
+   HPACC_Ethiopia <- HPACC_Ethiopia[order(HPACC_Ethiopia$'wealth_quintile'), ] 
+   HPACC_Ethiopia <- HPACC_Ethiopia %>% 
+     mutate(hh_members = row_number()) %>% 
+     unite(id, c('c_id', 'd_id', 'p_id', 'hh_id'), sep = "_", remove = FALSE)
+   dta_set <- HPACC_Ethiopia[is.na(HPACC_Ethiopia["wealth_quintile"])==F,]
+     n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+     n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+     n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+     n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+     cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+     cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+     cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+   HPACC_Ethiopia <- HPACC_Ethiopia %>% mutate(
+     poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+   HPACC_Ethiopia <- HPACC_Ethiopia %>% mutate(
+     poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+   HPACC_Ethiopia <- HPACC_Ethiopia %>% mutate(
+     poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+   HPACC_Ethiopia <- HPACC_Ethiopia %>% mutate( 
+     poor19 = ifelse(is.na(wealth_quintile)==T, NA, poor19))
+   HPACC_Ethiopia <- HPACC_Ethiopia %>% mutate( 
+     poor32 = ifelse(is.na(wealth_quintile)==T, NA, poor32))
+   HPACC_Ethiopia <- HPACC_Ethiopia %>% mutate( 
+     poor55 = ifelse(is.na(wealth_quintile)==T, NA, poor55))
+ 
+ #append and remove income variables
+   HPACC.poverty <- bind_rows(HPACC_Mexico, HPACC_Uganda, HPACC_Comoros, HPACC_China, HPACC_Vanuatu, HPACC_Swaziland, HPACC_Romania, HPACC_Tanzania, 
+                              HPACC_Zanzibar, HPACC_Liberia, HPACC_Bhutan, HPACC_Benin, HPACC_Timor_Leste, HPACC_Georgia, HPACC_Brazil, HPACC_Indonesia,
+                              HPACC_Kenya, HPACC_Albania, HPACC_Mozambique, HPACC_Egypt, HPACC_Nepal, HPACC_Togo, HPACC_Ghana, pov.botswana, pov.iran, 
+                              pov.morocco, pov.zambia, pov.algeria, pov.tuvalu, pov.tajikistan, pov.solomon, pov.sao, pov.samoa, pov.rwanda, pov.niger, 
+                              pov.myanmar, pov.laos, pov.kyryz, pov.kiribati, pov.tonga, pov.cabo, pov.ecuador, pov.gambia, pov.malawi, HPACC_Mongolia, 
+                              HPACC_Ethiopia, HPACC_Jordan)
+   HPACC.poverty <- select(HPACC.poverty,  -income_wk, -income_mth, -income_std, -income_yr, -income_cat, -hh_members, -wealth_quintile)
+   write.csv(HPACC.poverty, "~/HPACC.poverty.csv")
+
+```
+
+
+```{r add poverty data (GATS))}
+
+#load in combined GATS file and poverty data
+  GATS <- read.csv("D:/GATS1.csv", header=T, stringsAsFactors = F)
+  poverty_ratios <- read.csv("D:/imputed_pov_ratios_kalman_reshaped.csv", header=T, stringsAsFactors = F)
+
+#Bangladesh
+ GATS_poor_Bangladesh <- filter(GATS, country=='Bangladesh') #Includes data from 2009, is this correct?
+ GATS_poor_Bangladesh <- GATS_poor_Bangladesh[GATS_poor_Bangladesh["year"]!=2009,]
+ GATS_poor_Bangladesh <- GATS_poor_Bangladesh[order(GATS_poor_Bangladesh$'wealth_index'), ]
+ GATS_poor_Bangladesh <- GATS_poor_Bangladesh %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Bangladesh[is.na(GATS_poor_Bangladesh["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Bangladesh <- GATS_poor_Bangladesh %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Bangladesh <- GATS_poor_Bangladesh %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Bangladesh <- GATS_poor_Bangladesh %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#Costa Rica
+ GATS_poor_Costa_Rica <- filter(GATS, country=='Costa Rica')
+ GATS_poor_Costa_Rica <- GATS_poor_Costa_Rica[order(GATS_poor_Costa_Rica$'wealth_index'), ]
+ GATS_poor_Costa_Rica <- GATS_poor_Costa_Rica %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Costa_Rica[is.na(GATS_poor_Costa_Rica["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Costa_Rica <- GATS_poor_Costa_Rica %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Costa_Rica <- GATS_poor_Costa_Rica %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Costa_Rica <- GATS_poor_Costa_Rica %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#Ethiopia
+ GATS_poor_Ethiopia <- filter(GATS, country=='Ethiopia')
+ GATS_poor_Ethiopia <- GATS_poor_Ethiopia[order(GATS_poor_Ethiopia$'wealth_index'), ]
+ GATS_poor_Ethiopia <- GATS_poor_Ethiopia %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Ethiopia[is.na(GATS_poor_Ethiopia["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Ethiopia <- GATS_poor_Ethiopia %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Ethiopia <- GATS_poor_Ethiopia %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Ethiopia <- GATS_poor_Ethiopia %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#India
+ GATS_poor_India <- filter(GATS, country=='India')
+ GATS_poor_India <- GATS_poor_India[order(GATS_poor_India$'wealth_index'), ]
+ GATS_poor_India <- GATS_poor_India %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_India[is.na(GATS_poor_India["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_India <- GATS_poor_India %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_India <- GATS_poor_India %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_India <- GATS_poor_India %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#Mexico
+ GATS_poor_Mexico <- filter(GATS, country=='Mexico')
+ GATS_poor_Mexico <- GATS_poor_Mexico[order(GATS_poor_Mexico$'wealth_index'), ]
+ GATS_poor_Mexico <- GATS_poor_Mexico %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Mexico[is.na(GATS_poor_Mexico["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Mexico <- GATS_poor_Mexico %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Mexico <- GATS_poor_Mexico %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Mexico <- GATS_poor_Mexico %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#Panama
+ GATS_poor_Panama <- filter(GATS, country=='Panama')
+ GATS_poor_Panama <- GATS_poor_Panama[order(GATS_poor_Panama$'wealth_index'), ]
+ GATS_poor_Panama <- GATS_poor_Panama %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Panama[is.na(GATS_poor_Panama["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Panama <- GATS_poor_Panama %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Panama <- GATS_poor_Panama %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Panama <- GATS_poor_Panama %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#Philippines
+ GATS_poor_Philippines <- filter(GATS, country=='Philippines')
+ GATS_poor_Philippines <- GATS_poor_Philippines[order(GATS_poor_Philippines$'wealth_index'), ]
+ GATS_poor_Philippines <- GATS_poor_Philippines %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Philippines[is.na(GATS_poor_Philippines["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Philippines <- GATS_poor_Philippines %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Philippines <- GATS_poor_Philippines %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Philippines <- GATS_poor_Philippines %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#Senegal
+ GATS_poor_Senegal <- filter(GATS, country=='Senegal')
+ GATS_poor_Senegal <- GATS_poor_Senegal[order(GATS_poor_Senegal$'wealth_index'), ]
+ GATS_poor_Senegal <- GATS_poor_Senegal %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Senegal[is.na(GATS_poor_Senegal["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+  GATS_poor_Senegal <-  GATS_poor_Senegal %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+  GATS_poor_Senegal <-  GATS_poor_Senegal %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+  GATS_poor_Senegal <-  GATS_poor_Senegal %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+  
+#Uruguay
+ GATS_poor_Uruguay <- filter(GATS, country=='Uruguay')
+ GATS_poor_Uruguay <- GATS_poor_Uruguay[order(GATS_poor_Uruguay$'wealth_index'), ]
+ GATS_poor_Uruguay <- GATS_poor_Uruguay %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Uruguay[is.na(GATS_poor_Uruguay["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Uruguay <- GATS_poor_Uruguay %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Uruguay <- GATS_poor_Uruguay %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Uruguay <- GATS_poor_Uruguay %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#Vietnam
+ GATS_poor_Vietnam <- filter(GATS, country=='Vietnam')
+ GATS_poor_Vietnam <- GATS_poor_Vietnam[order(GATS_poor_Vietnam$'wealth_index'), ]
+ GATS_poor_Vietnam <- GATS_poor_Vietnam %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_Vietnam[is.na(GATS_poor_Vietnam["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Vietnam <- GATS_poor_Vietnam %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Vietnam <- GATS_poor_Vietnam %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Vietnam <- GATS_poor_Vietnam %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+ 
+#China
+ GATS_poor_China <- filter(GATS, country=='China')
+ GATS_poor_China <- GATS_poor_China[order(GATS_poor_China$'wealth_index'), ]
+ GATS_poor_China <- GATS_poor_China %>% dplyr::mutate(hh_members = row_number())
+ dta_set <- GATS_poor_China[is.na(GATS_poor_China["wealth_index"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_China <- GATS_poor_China %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_China <- GATS_poor_China %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_China <- GATS_poor_China %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+
+#Botswana
+ GATS_poor_Botswana <- filter(GATS, country=='Botswana')
+ GATS_poor_Botswana <- GATS_poor_Botswana[order(GATS_poor_Botswana$'wealth_quintile'), ] 
+ GATS_poor_Botswana <- GATS_poor_Botswana %>% dplyr::mutate(hh_members = row_number()) 
+ dta_set <- GATS_poor_Botswana[is.na(GATS_poor_Botswana["wealth_quintile"])==F,]
+   n_obs_per_year <- dta_set%>% dplyr::count(country, year, sort = TRUE)
+   n_obs_per_year <- merge(n_obs_per_year,poverty_ratios,by=c("country", "year")) 
+   n_obs_per_year["nYRpov19"] <- n_obs_per_year["YRpov19"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov32"] <- n_obs_per_year["YRpov32"]/100 * n_obs_per_year["n"]
+   n_obs_per_year["nYRpov55"] <- n_obs_per_year["YRpov55"]/100 * n_obs_per_year["n"]
+   cutoff19 = round(sum(n_obs_per_year["nYRpov19"]), digits = 0)
+   cutoff32 = round(sum(n_obs_per_year["nYRpov32"]), digits = 0)
+   cutoff55 = round(sum(n_obs_per_year["nYRpov55"]), digits = 0)
+ GATS_poor_Botswana <- GATS_poor_Botswana %>% mutate(
+   poor19 = ifelse(hh_members  < cutoff19, 1, 0))
+ GATS_poor_Botswana <- GATS_poor_Botswana %>% mutate(
+   poor32 = ifelse(hh_members  < cutoff32, 1, 0))
+ GATS_poor_Botswana <- GATS_poor_Botswana %>% mutate(
+   poor55 = ifelse(hh_members  < cutoff55, 1, 0))
+ GATS_poor_Botswana <- GATS_poor_Botswana %>% mutate( 
+   poor19 = ifelse(is.na(wealth_quintile)==T, NA, poor19))
+ GATS_poor_Botswana <- GATS_poor_Botswana %>% mutate( 
+   poor32 = ifelse(is.na(wealth_quintile)==T, NA, poor32))
+ GATS_poor_Botswana <- GATS_poor_Botswana %>% mutate( 
+   poor55 = ifelse(is.na(wealth_quintile)==T, NA, poor55))
+
+#append GATS poverty data
+ GATS.poverty <- bind_rows(GATS_poor_Vietnam, GATS_poor_Uruguay, GATS_poor_Senegal, GATS_poor_Philippines, GATS_poor_Panama, GATS_poor_Mexico, 
+                           GATS_poor_India, GATS_poor_China, GATS_poor_Ethiopia,  GATS_poor_Costa_Rica, GATS_poor_Bangladesh, GATS_poor_Botswana)
+ write.csv(GATS.poverty, "D:/GATS.poverty.csv")
+
+```
+
+
+```{r Combine HPACC, DHS and GATS datasets and do some final cleaning}
+
+  DHS.poverty <- read.csv("D:/DHS.poverty.csv", header=T, stringsAsFactors = F)
+  GATS.poverty <- read.csv("D:/GATS.poverty.csv", header=T, stringsAsFactors = F)
+  HPACC.poverty <- read.csv("D:/HPACC.poverty.csv", header=T, stringsAsFactors = F)
+
+  DHS.poverty  <- DHS.poverty [,-1]
+  GATS.poverty  <- GATS.poverty [,-1]
+  HPACC.poverty  <- HPACC.poverty [,-1]
+
+ #prepare appending of GATS, DHS and HPACC by bringing variables into same format
+  DHS.poverty <- DHS.poverty %>% 
+    mutate(psu_orig = as.character(psu_orig),
+           mergeid = as.character(mergeid),
+           hh_id = as.character(hh_id),
+           year = as.character(year),
+           stratum = as.character(stratum))
+     
+  GATS.poverty <- GATS.poverty %>% 
+    mutate(psu_orig = as.character(psu_orig),
+           year = as.character(year),
+           stratum = as.character(stratum),
+           mergeid = as.character(mergeid))
+    
+  HPACC.poverty <- HPACC.poverty %>% 
+    mutate(psu_orig = as.character(psu_orig),
+           year = as.character(year),
+           stratum = as.character(stratum),
+           hh_id = as.character(hh_id),
+           mergeid = as.character(id))
+  
+#create final dataset    
+   bottombillion <- bind_rows(DHS.poverty, HPACC.poverty, GATS.poverty)             
+   bottombillion <- select(bottombillion, -p_id, -c_id, -d_id)
+   
+#exclude all countries without income data, extreme poverty, or available WB poverty data - these cannot be used for our analysis
+  countrywithoutincome <- c("Fiji", "Seychelles", "Belize", "Chile", "St. Vincent & the Grenadines", "Guyana", "Cambodia", "Grenada", "Iraq", "Sri 
+                            Lanka", "Sudan")
+  countrywithoutoutcomevar <- c("Sierra Leone") #müsste eigentlich schon excluded sein, nochmal checken
+  countrywithoutpoverty <- c("Azerbaijan", "Belarus", "Kazakhstan", "Moldova", "Malaysia", "Maldives", "Thailand", "Lebanon", "Russian Federation", 
+                             "Ukraine", "Algeria", "Morocco", "Nepal")
+  countrywithoutpovertyind <- c("Eritrea", "Cambodia")
+    
+  bottombillion <- bottombillion %>% 
+    filter(!(country %in% countrywithoutpoverty))%>% 
+    filter(!(country %in% countrywithoutpovertyind))%>% 
+    filter(!(country %in% countrywithoutincome))%>% 
+    filter(!(country %in% countrywithoutoutcomevar))
+   
+#do some final cleaning and remove unrealistic values for BP, overweight and obesity
+  bottombillion <- filter(bottombillion, age > 14)
+  bottombillion <- filter(bottombillion, is.na(pregnant) | pregnant!=1)
+  bottombillion <- filter(bottombillion, is.na(visitor) | visitor!=1)
+  bottombillion <- bottombillion %>% 
+    mutate(bmi = ifelse(bmi<10 | bmi>80, NA, bmi),
+           sbp1 = ifelse(sbp1>240 | sbp1<70, NA, sbp1),
+           sbp2 = ifelse(sbp2>240 | sbp2<70, NA, sbp2),
+           sbp3 = ifelse(sbp3>240 | sbp3<70, NA, sbp3),
+           dbp1 = ifelse(dbp1>130 | dbp1<40, NA, dbp1),
+           dbp2 = ifelse(dbp2>130 | dbp2<40, NA, dbp2),
+           dbp3 = ifelse(dbp3>130 | dbp3<40, NA, dbp3))%>% 
+    mutate(overweight = ifelse(is.na(overweight)==T & is.na(bmi)==F & bmi>=25, 1, 
+                          ifelse(is.na(overweight)==T & is.na(bmi)==F & bmi<=25, 0, overweight)), 
+           obese = ifelse(is.na(obese)==T & is.na(bmi)==F & bmi>=30, 1, 
+                          ifelse(is.na(obese)==T & is.na(bmi)==F & bmi<=30, 0, obese)))
+   
+  bottombillion <- bottombillion %>% dplyr::na_if(999999999)
+  bottombillion <- bottombillion %>% dplyr::na_if(777777777)
+  bottombillion <- bottombillion %>% dplyr::na_if(888888888)
+  bottombillion <- bottombillion %>% dplyr::na_if(666666666)
+  bottombillion <- bottombillion %>% dplyr::na_if(666666688)
+     
+#delete duplicates
+  bottombillion <- distinct(bottombillion)
+  bottombillion <- select(bottombillion, -X)
+       
+#rename Timor Leste, Cote d'Ivoire
+  bottombillion$country[bottombillion$country == "Cote d'Ivoire"] <- "Cote dIvoire"
+  bottombillion$country[bottombillion$country == "Timor-Leste"] <- "Timor Leste"
+  bottombillion$country[bottombillion$country == "Kyrgyzstan"] <- "Kyrgyz Republic"
+       
+#save final dataset
+  write.csv(bottombillion, "D:/bottombillion1.csv")
+
+```
+
+
